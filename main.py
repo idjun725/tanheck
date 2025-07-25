@@ -1,3 +1,4 @@
+import asyncio
 import pygame
 import sys
 import random
@@ -7,7 +8,6 @@ WIDTH, HEIGHT = 800, 600
 win = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("My Game")
 
-# 배경, 폰트, 이미지 불러오기
 font_path = "NanumGothic.ttf"
 font = pygame.font.Font(font_path, 36)
 background_img = pygame.image.load("background.png").convert()
@@ -71,39 +71,42 @@ def game_clear_screen(score):
                 if event.key == pygame.K_SPACE: return
                 if event.key == pygame.K_ESCAPE: pygame.quit(); sys.exit()
 
-def main_game():
-    bullets = []
-    bullet_speed = 7
-    last_shot_time = 0
-    cooldown = 300
-    bullets_to_remove = []
-    enemies_to_remove = []
-    enemies = []
+async def main():
+    global player
+    while True:
+        title_screen()
+        score = await main_game()
+        if score >= 100:
+            game_clear_screen(score)
+        else:
+            game_over_screen(score)
+
+async def main_game():
+    global player
+    bullets, enemies = [], []
+    bullets_to_remove, enemies_to_remove = [], []
+    bullet_speed, last_shot_time, cooldown = 7, 0, 300
     ENEMY_SPAWN_EVENT = pygame.USEREVENT + 1
     pygame.time.set_timer(ENEMY_SPAWN_EVENT, 1000)
-    score = 0
+    score, running = 0, True
     clock = pygame.time.Clock()
-    running = True
+
     while running:
         win.blit(background_img, (0, 0))
         clock.tick(60)
-        if score >= 100:
-            break
+        if score >= 100: break
+
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+            if event.type == pygame.QUIT: running = False
             elif event.type == ENEMY_SPAWN_EVENT:
                 while True:
-                    enemy_size = random.randint(40, 60)
-                    x = random.randint(0, WIDTH - enemy_size)
-                    y = random.randint(0, HEIGHT - enemy_size)
-                    ex, ey = x + enemy_size // 2, y + enemy_size // 2
-                    if ((ex - player.centerx)**2 + (ey - player.centery)**2)**0.5 < 100:
-                        continue
-                    enemy_speed = random.randint(1, 4)
-                    enemy_img = pygame.transform.scale(enemy_base_img, (enemy_size, enemy_size))
-                    enemy = {'rect': pygame.Rect(x, y, enemy_size, enemy_size), 'speed': enemy_speed, 'img': enemy_img}
-                    enemies.append(enemy)
+                    esize = random.randint(40, 60)
+                    x, y = random.randint(0, WIDTH - esize), random.randint(0, HEIGHT - esize)
+                    ex, ey = x + esize//2, y + esize//2
+                    if ((ex - player.centerx)**2 + (ey - player.centery)**2)**0.5 < 100: continue
+                    speed = random.randint(1, 4)
+                    img = pygame.transform.scale(enemy_base_img, (esize, esize))
+                    enemies.append({'rect': pygame.Rect(x, y, esize, esize), 'speed': speed, 'img': img})
                     cooldown = max(100, cooldown - 10)
                     break
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -113,42 +116,30 @@ def main_game():
                     dx, dy = mx - player.centerx, my - player.centery
                     dist = (dx**2 + dy**2) ** 0.5
                     direction = (dx / dist, dy / dist)
-                    bullet = {'rect': pygame.Rect(player.centerx, player.centery, 5, 5), 'dir': direction}
-                    bullets.append(bullet)
+                    bullets.append({'rect': pygame.Rect(player.centerx, player.centery, 5, 5), 'dir': direction})
 
         for bullet in bullets[:]:
             bullet['rect'].x += bullet_speed * bullet['dir'][0]
             bullet['rect'].y += bullet_speed * bullet['dir'][1]
             pygame.draw.rect(win, (255, 255, 0), bullet['rect'])
-            if not win.get_rect().colliderect(bullet['rect']):
-                bullets.remove(bullet)
+            if not win.get_rect().colliderect(bullet['rect']): bullets.remove(bullet)
 
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_a] and player.left > 0:
-            player.x -= player_speed
-        if keys[pygame.K_d] and player.right < WIDTH:
-            player.x += player_speed
-        if keys[pygame.K_w] and player.top > 0:
-            player.y -= player_speed
-        if keys[pygame.K_s] and player.bottom < HEIGHT:
-            player.y += player_speed
+        if keys[pygame.K_a] and player.left > 0: player.x -= player_speed
+        if keys[pygame.K_d] and player.right < WIDTH: player.x += player_speed
+        if keys[pygame.K_w] and player.top > 0: player.y -= player_speed
+        if keys[pygame.K_s] and player.bottom < HEIGHT: player.y += player_speed
 
         for enemy in enemies[:]:
-            dx = player.centerx - enemy['rect'].centerx
-            dy = player.centery - enemy['rect'].centery
+            dx, dy = player.centerx - enemy['rect'].centerx, player.centery - enemy['rect'].centery
             dist = (dx**2 + dy**2) ** 0.5
-            direction = (dx / dist, dy / dist) if dist != 0 else (0, 0)
-            move_x = enemy['speed'] * direction[0]
-            move_y = enemy['speed'] * direction[1]
-            if abs(move_x) < 1 and direction[0] != 0:
-                move_x = 1 * (1 if direction[0] > 0 else -1)
-            if abs(move_y) < 1 and direction[1] != 0:
-                move_y = 1 * (1 if direction[1] > 0 else -1)
-            enemy['rect'].x += int(move_x)
-            enemy['rect'].y += int(move_y)
+            dirx, diry = (dx / dist, dy / dist) if dist else (0, 0)
+            mx = max(1, abs(enemy['speed'] * dirx)) * (1 if dirx > 0 else -1) if dirx else 0
+            my = max(1, abs(enemy['speed'] * diry)) * (1 if diry > 0 else -1) if diry else 0
+            enemy['rect'].x += int(mx)
+            enemy['rect'].y += int(my)
             win.blit(enemy['img'], enemy['rect'])
-            if not win.get_rect().colliderect(enemy['rect']):
-                enemies.remove(enemy)
+            if not win.get_rect().colliderect(enemy['rect']): enemies.remove(enemy)
 
         for bullet in bullets[:]:
             for enemy in enemies[:]:
@@ -158,33 +149,23 @@ def main_game():
                     score += 1
 
         for bullet in bullets_to_remove:
-            if bullet in bullets:
-                bullets.remove(bullet)
+            if bullet in bullets: bullets.remove(bullet)
         bullets_to_remove.clear()
         for enemy in enemies_to_remove:
-            if enemy in enemies:
-                enemies.remove(enemy)
+            if enemy in enemies: enemies.remove(enemy)
         enemies_to_remove.clear()
 
-        for enemy in enemies[:]:
-            dx = player.centerx - enemy['rect'].centerx
-            dy = player.centery - enemy['rect'].centery
-            dist = (dx ** 2 + dy ** 2) ** 0.5
-            if dist < 10 or player.colliderect(enemy['rect']):
-                running = False
-                break
+        for enemy in enemies:
+            dx, dy = player.centerx - enemy['rect'].centerx, player.centery - enemy['rect'].centery
+            if (dx**2 + dy**2) ** 0.5 < 10 or player.colliderect(enemy['rect']):
+                running = False; break
 
         draw_text(f"Score: {score}", 10, 10)
         win.blit(player_img, player)
         pygame.display.update()
+        await asyncio.sleep(0)
 
     pygame.time.delay(1000)
     return score
 
-while True:
-    title_screen()
-    score = main_game()
-    if score >= 100:
-        game_clear_screen(score)
-    else:
-        game_over_screen(score)
+asyncio.run(main())
